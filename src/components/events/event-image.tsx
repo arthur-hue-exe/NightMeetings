@@ -1,8 +1,9 @@
 import Image from "next/image";
 import type { ComponentProps } from "react";
+import { shouldBypassImageOptimizer } from "@/lib/image-urls";
 
-/** Imagens enviadas ficam no storage privado servido por /uploads; já são otimizadas no upload. */
+/** Uploads locais e do Blob já chegam otimizados (WebP); o otimizador do Next é dispensado. */
 export function EventImage({ src, ...props }: ComponentProps<typeof Image>) {
-  const isUpload = typeof src === "string" && src.startsWith("/uploads/");
-  return <Image src={src} unoptimized={isUpload} {...props} />;
+  const bypassOptimizer = typeof src === "string" && shouldBypassImageOptimizer(src);
+  return <Image src={src} unoptimized={bypassOptimizer} {...props} />;
 }

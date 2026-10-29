@@ -11,7 +11,7 @@ import { EmptyState } from "@/components/events/empty-state";
 import { Reveal } from "@/components/motion/reveal";
 import { ButtonLink } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { getHomeData } from "@/lib/events";
+import { getAttendingEventIds, getHomeData } from "@/lib/events";
 import { getCurrentUser } from "@/lib/auth";
 import { EVENT_CATEGORIES } from "@/lib/constants";
 
@@ -22,6 +22,11 @@ export const metadata: Metadata = {
 
 export default async function HomePage() {
   const [data, user] = await Promise.all([getHomeData(), getCurrentUser()]);
+  const attendingIds = user
+    ? await getAttendingEventIds(user.id, [
+        ...new Set([...data.upcoming, ...data.featured, ...data.routeRides].map((event) => event.id)),
+      ])
+    : new Set<string>();
 
   return (
     <>
@@ -45,7 +50,13 @@ export default async function HomePage() {
         {data.upcoming.length > 0 ? (
           <Reveal className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {data.upcoming.map((event, index) => (
-              <EventCard key={event.id} event={event} priority={index < 3} />
+              <EventCard
+                key={event.id}
+                event={event}
+                priority={index < 3}
+                attending={attendingIds.has(event.id)}
+                authenticated={Boolean(user)}
+              />
             ))}
           </Reveal>
         ) : (
@@ -82,7 +93,12 @@ export default async function HomePage() {
             </Reveal>
             <Reveal className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {data.featured.map((event) => (
-                <EventCard key={event.id} event={event} />
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  attending={attendingIds.has(event.id)}
+                  authenticated={Boolean(user)}
+                />
               ))}
             </Reveal>
           </div>
@@ -106,7 +122,12 @@ export default async function HomePage() {
           </Reveal>
           <Reveal className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {data.routeRides.map((event) => (
-              <RouteRideCard key={event.id} event={event} />
+              <RouteRideCard
+                key={event.id}
+                event={event}
+                attending={attendingIds.has(event.id)}
+                authenticated={Boolean(user)}
+              />
             ))}
           </Reveal>
         </section>

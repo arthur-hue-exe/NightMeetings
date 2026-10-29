@@ -6,21 +6,22 @@ export const PAGE_SIZE = 9;
 
 const listInclude = {
   user: { select: { id: true, name: true } },
+  _count: {
+    select: { attendances: { where: { cancelledAt: null } } },
+  },
 } satisfies Prisma.EventInclude;
 
 export type EventListItem = Prisma.EventGetPayload<{ include: typeof listInclude }>;
 
-export type EventDetail = Prisma.EventGetPayload<{
-  include: {
-    user: { select: { id: true; name: true; createdAt: true } };
-    images: true;
-  };
-}>;
-
 const detailInclude = {
   user: { select: { id: true, name: true, createdAt: true } },
   images: { orderBy: { createdAt: "asc" } },
+  _count: {
+    select: { attendances: { where: { cancelledAt: null } } },
+  },
 } satisfies Prisma.EventInclude;
+
+export type EventDetail = Prisma.EventGetPayload<{ include: typeof detailInclude }>;
 
 export type EventSort = "upcoming" | "recent";
 export type EventPeriod = "any" | "today" | "weekend" | "month";
@@ -61,10 +62,10 @@ export async function searchEvents(filters: EventFilters) {
   if (q) {
     and.push({
       OR: [
-        { title: { contains: q } },
-        { description: { contains: q } },
-        { city: { contains: q } },
-        { meetingPoint: { contains: q } },
+        { title: { contains: q, mode: "insensitive" } },
+        { description: { contains: q, mode: "insensitive" } },
+        { city: { contains: q, mode: "insensitive" } },
+        { meetingPoint: { contains: q, mode: "insensitive" } },
       ],
     });
   }
@@ -221,6 +222,23 @@ export async function getEventBySlug(slug: string): Promise<EventDetail | null> 
   });
   if (!event || event.status === "DELETED") return null;
   return event;
+}
+
+export async function getAttendingEventIds(userId: string, eventIds: string[]) {
+  if (eventIds.length === 0) return new Set<string>();
+  const attendances = await prisma.eventAttendance.findMany({
+    where: { userId, eventId: { in: eventIds }, cancelledAt: null },
+    select: { eventId: true },
+  });
+  return new Set(attendances.map((attendance) => attendance.eventId));
+}
+
+export async function isAttendingEvent(eventId: string, userId: string) {
+  const attendance = await prisma.eventAttendance.findFirst({
+    where: { eventId, userId, cancelledAt: null },
+    select: { id: true },
+  });
+  return Boolean(attendance);
 }
 
 export async function getEventForOwner(id: string, userId: string) {

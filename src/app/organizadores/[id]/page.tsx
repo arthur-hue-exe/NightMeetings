@@ -7,7 +7,8 @@ import { EmptyState } from "@/components/events/empty-state";
 import { Reveal } from "@/components/motion/reveal";
 import { ButtonLink } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { getOrganizerProfile } from "@/lib/events";
+import { getAttendingEventIds, getOrganizerProfile } from "@/lib/events";
+import { getCurrentUser } from "@/lib/auth";
 import { formatMonthYear } from "@/lib/dates";
 
 type PageProps = { params: Promise<{ id: string }> };
@@ -34,9 +35,15 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function OrganizerPage({ params }: PageProps) {
   const { id } = await params;
-  const organizer = await getOrganizerProfile(id);
+  const [organizer, user] = await Promise.all([getOrganizerProfile(id), getCurrentUser()]);
   if (!organizer) notFound();
 
+  const attendingIds = user
+    ? await getAttendingEventIds(
+        user.id,
+        organizer.events.map((event) => event.id),
+      )
+    : new Set<string>();
   const initial = organizer.name.trim().charAt(0).toUpperCase();
   const activeEvents = organizer.events;
   const cities = Array.from(new Set(activeEvents.map((event) => event.city)));
@@ -130,7 +137,13 @@ export default async function OrganizerPage({ params }: PageProps) {
           {activeEvents.length > 0 ? (
             <Reveal className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {activeEvents.map((event, index) => (
-                <EventCard key={event.id} event={event} priority={index < 3} />
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  priority={index < 3}
+                  attending={attendingIds.has(event.id)}
+                  authenticated={Boolean(user)}
+                />
               ))}
             </Reveal>
           ) : (

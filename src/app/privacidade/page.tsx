@@ -118,6 +118,12 @@ export default function PrivacyPage() {
                 push.
               </p>
               <p>
+                <strong className="text-fog">Confirmações de presença:</strong> registramos que a sua
+                conta confirmou presença em um evento, com data de criação e eventual cancelamento.
+                Apenas a contagem total de presenças ativas é exibida publicamente; nomes, e-mails,
+                fotos e a lista de participantes nunca são divulgados.
+              </p>
+              <p>
                 <strong className="text-fog">Uso técnico:</strong> registro de sessão por cookie,
                 endereço IP e dados básicos da requisição podem ser processados de forma transitória
                 para autenticação, segurança e limitação de abuso (por exemplo, limite de uploads e
@@ -134,6 +140,7 @@ export default function PrivacyPage() {
                 <li>Criar e autenticar sua conta e manter sua sessão ativa.</li>
                 <li>Publicar, exibir, editar e compartilhar os eventos que você criou.</li>
                 <li>Exibir seu nome como organizador e seus eventos ativos no perfil público.</li>
+                <li>Registrar sua presença em eventos e exibir somente a contagem agregada.</li>
                 <li>Validar formulários, armazenar imagens e proteger a plataforma contra abuso.</li>
                 <li>Responder solicitações de suporte, correção ou exclusão de dados.</li>
               </ul>

@@ -16,6 +16,7 @@ import {
   ShieldAlert,
   UserRound,
 } from "lucide-react";
+import { AttendanceControl } from "@/components/events/attendance-control";
 import { EventGallery } from "@/components/events/event-gallery";
 import { EventImage } from "@/components/events/event-image";
 import { RouteTimeline } from "@/components/events/route-timeline";
@@ -23,7 +24,7 @@ import { ShareEventButton } from "@/components/events/share-button";
 import { CategoryIcon } from "@/components/events/category-icon";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
-import { getEventBySlug } from "@/lib/events";
+import { getEventBySlug, isAttendingEvent } from "@/lib/events";
 import { getCurrentUser } from "@/lib/auth";
 import { getCategoryLabel } from "@/lib/constants";
 import {
@@ -95,6 +96,7 @@ export default async function EventPage({ params }: PageProps) {
 
   if (!event) notFound();
 
+  const attending = user ? await isAttendingEvent(event.id, user.id) : false;
   const today = getTodayISO();
   const expired = isEventExpired(event.endDate, event.eventDate, today);
   const cancelled = event.status === "CANCELLED";
@@ -395,6 +397,21 @@ export default async function EventPage({ params }: PageProps) {
                   </div>
                 ) : null}
               </div>
+
+              <div className="hairline" />
+
+              <AttendanceControl
+                eventId={event.id}
+                slug={event.slug}
+                initialAttending={attending}
+                initialCount={event._count.attendances}
+                authenticated={Boolean(user)}
+                disabled={cancelled || expired}
+                disabledLabel={
+                  cancelled ? "Evento cancelado pelo organizador" : "Evento encerrado"
+                }
+                layout="detail"
+              />
 
               <div className="hairline" />
 

@@ -8,12 +8,11 @@ import {
   PRIVATE_MESSAGE_MAX,
 } from "@/lib/constants";
 import { isValidISODate } from "@/lib/dates";
+import { isCommunityEmblemUrl, isStoredImageUrl } from "@/lib/image-urls";
 
 const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE_MESSAGE = "Informe uma data válida no formato DD/MM/AAAA.";
 const TIME_MESSAGE = "Informe um horário válido (HH:mm).";
-const IMAGE_PATH_REGEX =
-  /^\/(uploads\/[0-9a-f-]{36}\.webp|images\/events\/[a-z0-9-]+\.webp)$/;
 
 const dateField = z
   .string()
@@ -103,11 +102,11 @@ export const eventSchema = z
       .max(300)
       .default("")
       .refine(
-        (value) => !value || IMAGE_PATH_REGEX.test(value),
+        (value) => !value || isStoredImageUrl(value),
         "Imagem de capa inválida.",
       ),
     images: z
-      .array(z.string().regex(IMAGE_PATH_REGEX, "Imagem inválida."))
+      .array(z.string().max(300).refine(isStoredImageUrl, "Imagem inválida."))
       .max(MAX_EVENT_IMAGES, `Envie no máximo ${MAX_EVENT_IMAGES} fotos.`)
       .default([]),
   })
@@ -208,13 +207,6 @@ export function normalizeInstagram(value: string | undefined | null) {
   return handle || null;
 }
 
-export function isUploadedImagePath(url: string | null | undefined) {
-  return Boolean(url && url.startsWith("/uploads/"));
-}
-
-const COMMUNITY_EMBLEM_REGEX = /^\/uploads\/[0-9a-f-]{36}\.webp$/;
-const COMMUNITY_IMAGE_REGEX = /^\/(uploads\/[0-9a-f-]{36}\.webp|images\/events\/[a-z0-9-]+\.webp)$/;
-
 export function isWhatsAppInviteUrl(value: string) {
   try {
     const url = new URL(value);
@@ -241,8 +233,8 @@ export const communitySchema = z.object({
   emblemUrl: z
     .string()
     .trim()
-    .regex(COMMUNITY_EMBLEM_REGEX, "Envie um emblema para a comunidade.")
-    .refine((value) => value.length > 0, "O emblema é obrigatório."),
+    .max(300)
+    .refine(isCommunityEmblemUrl, "Envie um emblema válido para a comunidade."),
   whatsappInviteUrl: z
     .string()
     .trim()
@@ -285,7 +277,7 @@ export const groupConversationSchema = z.object({
     .string()
     .trim()
     .max(300)
-    .refine((value) => !value || COMMUNITY_IMAGE_REGEX.test(value), "Imagem inválida.")
+    .refine((value) => !value || isStoredImageUrl(value), "Imagem inválida.")
     .default(""),
 });
 
@@ -295,7 +287,7 @@ export const conversationUpdateSchema = z.object({
     .string()
     .trim()
     .max(300)
-    .refine((value) => !value || COMMUNITY_IMAGE_REGEX.test(value), "Imagem inválida.")
+    .refine((value) => !value || isStoredImageUrl(value), "Imagem inválida.")
     .optional(),
   status: z.enum(["ACTIVE", "CLOSED"]).optional(),
 });

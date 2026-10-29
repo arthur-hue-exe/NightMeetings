@@ -33,6 +33,7 @@ Plataforma web em português para divulgar e organizar encontros de motos em Goi
 - Linha do tempo separando concentração, saída e chegada. Links do Google Maps usam somente os endereços informados (sem coordenadas, distâncias ou tempos inventados).
 - Página de detalhe em `/eventos/nome-do-evento-id` com capa, galeria com lightbox, trajeto, mapa, compartilhamento (Web Share API com fallback de cópia) e aviso de evento cancelado/expirado.
 - Expiração calculada no servidor: o evento permanece visível até o fim do dia final em `America/Sao_Paulo` e some das listagens no dia seguinte. Eventos de vários dias usam `endDate`. Registros não são apagados.
+- Confirmação de presença (RSVP) nos cards e na página do evento, com cancelamento e reconfirmação. A API pública expõe apenas a contagem agregada de presenças ativas, nunca nomes, e-mails ou a lista de participantes. A contagem é calculada no banco e a chave única `(eventId, userId)` impede duplicidade mesmo em requisições simultâneas.
 
 ### Catálogo e organização
 - Busca com debounce, filtros de cidade, categoria, data, período (dia/noite) e presença de rota, com ordenação por mais próximo ou mais recente.
@@ -120,7 +121,9 @@ O seed recria os eventos de demonstração e remove eventos anteriores dos dois 
 | `DATABASE_URL` | Sim | SQLite (`file:./dev.db`) no desenvolvimento ou URL PostgreSQL em produção. |
 | `NEXT_PUBLIC_SITE_URL` | Sim em produção | URL pública sem barra final. Usada em metadados, sitemap, robots e links absolutos. |
 | `MAX_UPLOAD_MB` | Não | Limite por imagem em MB. Padrão: `5`. |
-| `UPLOAD_DIR` | Não | Diretório persistente dos uploads. Padrão: `./storage/uploads`. |
+| `UPLOAD_DIR` | Não | Diretório dos uploads no driver `local`. Padrão: `./storage/uploads`. |
+| `STORAGE_DRIVER` | Não | `local` ou `vercel-blob`. Sem valor, usa Blob quando `BLOB_READ_WRITE_TOKEN` existe e `local` fora da Vercel. |
+| `BLOB_READ_WRITE_TOKEN` | Na Vercel | Token do Vercel Blob, injetado ao conectar um Blob store. Somente no servidor. |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Para push | Chave pública VAPID (pode ir ao frontend; **nunca** a privada). |
 | `VAPID_PRIVATE_KEY` | Para push | Chave privada VAPID, somente no servidor. |
 | `VAPID_SUBJECT` | Para push | Contato `mailto:` ou URL exigido pelo protocolo Web Push. |
@@ -136,6 +139,7 @@ Modelos Prisma em `prisma/schema.prisma`:
 - `Session`: `id`, `tokenHash` único, `userId`, `expiresAt`, `createdAt`; exclusão em cascata com o usuário.
 - `Event`: dados do evento, status (`ACTIVE`, `CANCELLED`, `DELETED`), destaque, proprietário (`userId`) e timestamps.
 - `EventImage`: galeria do evento (`eventId`, `imageUrl`, `altText`), cascata na exclusão do evento.
+- `EventAttendance`: confirmação de presença (`eventId`, `userId`, `cancelledAt`), com chave única por evento/usuário. Cancelar mantém o registro para permitir reconfirmar sem duplicar a contagem.
 - `AnonymousSession`: identidade anônima do fórum (`id`, apelido `User NNNN`, `lastSeenAt`).
 - `GlobalMessage`: mensagens do fórum (`sessionId` ou `userId`, `displayName`, `content`, `ipHash`, `moderationStatus`).
 - `Community`: grupos (`name`, `slug`, `description`, `city`, `category`, `emblemUrl`, `whatsappInviteUrl`, `status`, `creatorId`).
@@ -155,6 +159,7 @@ A migração inicial está em `prisma/migrations/20261029122458_init`. A expans�
 
 - `20261029131449_community_social`: comunidades, fórum, conversas, notificações, push, consentimento e moderação.
 - `20261029132213_event_notification`: marca `Event.notifiedAt` para envio idempotente de push/notificação de novo evento.
+- `20261029160000_event_attendance`: cria `EventAttendance` e seus índices, sem alterar ou remover dados existentes.
 
 ```bash
 npx prisma migrate dev    # desenvolvimento
@@ -172,13 +177,15 @@ Os campos de data continuam como texto, portanto a troca de banco não altera a 
 
 ## Uploads e armazenamento
 
-- Arquivos são gravados fora de `public`, em `storage/uploads` por padrão. Apenas o nome UUID `.webp` é público; o caminho absoluto nunca é exposto.
-- `UPLOAD_DIR` permite apontar para um volume persistente (obrigatório em containers/VPS com diretório efêmero).
+- Dois drivers em `src/lib/storage.ts`: `local` (disco em `UPLOAD_DIR`, padrão `storage/uploads`) e `vercel-blob` (Vercel Blob, URLs públicas em `*.public.blob.vercel-storage.com`). O driver é resolvido por `STORAGE_DRIVER` ou pela presença de `BLOB_READ_WRITE_TOKEN`.
+- Na Vercel sem `BLOB_READ_WRITE_TOKEN`, o upload falha explicitamente com **503** (`STORAGE_UNCONFIGURED`) em vez de tentar gravar no sistema de arquivos somente leitura.
 - Formatos aceitos: JPEG, PNG, WebP e AVIF, com verificação de assinatura binária além do MIME.
-- Processamento com Sharp: rotação EXIF, redimensionamento para no máximo 2000×2000 e conversão para WebP qualidade 82. Limite de 40 megapixels na entrada.
+- Processamento com Sharp em memória: rotação EXIF, redimensionamento para no máximo 2000×2000 e conversão para WebP qualidade 82. Limite de 40 megapixels na entrada. O processamento não grava em disco.
 - Limite de tamanho por arquivo via `MAX_UPLOAD_MB` (padrão 5 MB) e até 6 imagens na galeria.
-- Leitura por `/uploads/[filename]` com validação de nome, `Content-Type: image/webp`, cache imutável e `nosniff`.
-- Ao editar um evento, imagens removidas da galeria/capa são apagadas do disco quando não estão em uso. Eventos excluídos logicamente permanecem no histórico; arquivos podem ficar sem vínculo, como descrito na Política de Privacidade.
+- No driver `local`, a leitura continua por `/uploads/[filename]` com validação de nome, `Content-Type: image/webp`, cache imutável e `nosniff`. No driver `vercel-blob`, o arquivo é servido pelo CDN do Blob.
+- Códigos de resposta de `POST /api/upload`: `400` arquivo ausente/ilegível, `413` acima do limite, `415` formato não permitido, `422` imagem inválida ou corrompida, `503` storage não configurado, `500`/`502` falha interna de processamento ou armazenamento. O corpo inclui `code` estável (`INVALID_IMAGE`, `TOO_LARGE`, `STORAGE_UNCONFIGURED` etc.).
+- Falhas são registradas no servidor com etapa, driver, MIME, tamanho e mensagem do erro real (tokens e credenciais são mascarados); o conteúdo da imagem nunca é registrado.
+- Ao editar um evento, imagens removidas da galeria/capa são apagadas do disco ou do Blob quando não estão em uso. Eventos excluídos logicamente permanecem no histórico; arquivos podem ficar sem vínculo, como descrito na Política de Privacidade.
 
 ## Tempo real, notificações e push
 
@@ -283,7 +290,12 @@ npx playwright install chromium
 
 ### Vercel ou ambiente serverless
 
-O armazenamento implementado é em disco local. Em plataformas serverless o sistema de arquivos é efêmero e os uploads seriam perdidos em redeploys. Para usar Vercel, é necessário adaptar `src/lib/storage.ts` para um storage externo (por exemplo S3 ou Supabase Storage) e configurar as credenciais correspondentes no ambiente. Essa integração não está incluída e não há credenciais fictícias no projeto.
+1. No painel da Vercel, crie um **Blob store** (Storage → Blob) e conecte-o ao projeto. A Vercel injeta `BLOB_READ_WRITE_TOKEN` automaticamente; não é necessário copiar o token para o código.
+2. Configure `DATABASE_URL`, `NEXT_PUBLIC_SITE_URL`, `MAX_UPLOAD_MB`, `FORUM_IP_SALT` e, para push, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` e `VAPID_SUBJECT`. `STORAGE_DRIVER=vercel-blob` é opcional (o token já seleciona o driver).
+3. Rode `npx prisma migrate deploy` e faça o deploy. Funções de API usam o runtime Node.js; o upload declara `maxDuration = 30` para imagens maiores.
+4. Sem o token do Blob, `POST /api/upload` responde `503` com `code: "STORAGE_UNCONFIGURED"` — o sistema não tenta usar o disco efêmero.
+5. A Vercel limita o corpo de requisições de função a cerca de 4,5 MB. Defina `MAX_UPLOAD_MB=4` (ou menos) na Vercel para que imagens grandes recebam o `413` da aplicação em vez do erro da plataforma.
+6. O SSE e o rate limiting continuam em memória: em múltiplas instâncias é necessário barramento compartilhado (ex.: Redis) e sessões sticky.
 
 ### Supabase
 
@@ -297,8 +309,8 @@ O acesso ao banco é feito via Prisma com conexão direta. Por isso, políticas 
 - Exclusão de evento é lógica (`DELETED`), preservando histórico e integridade referencial.
 - O rate limiting é em memória e reinicia com o processo; para múltiplas instâncias, substitua por um store compartilhado (ex.: Redis).
 - O tempo real (SSE) também é em memória e funciona em uma instância; múltiplas instâncias exigem barramento compartilhado.
-- O armazenamento de imagens é local, conforme descrito acima.
-- O emblema de comunidade aceita apenas upload próprio persistido em `/uploads`; imagens da pasta de demonstração são válidas apenas para eventos.
+- O armazenamento de imagens usa disco local em VPS/container (`UPLOAD_DIR`) e Vercel Blob em serverless; não há replicação entre os dois drivers.
+- O emblema de comunidade aceita upload próprio persistido em `/uploads` ou no Vercel Blob; imagens da pasta de demonstração são válidas apenas para eventos.
 - Links do WhatsApp são divulgados como enviados pelo criador; a plataforma não confirma a existência nem a moderação do grupo externo.
 - Mensagens privadas não usam criptografia ponta a ponta; a moderação pode acessar conteúdo armazenado quando necessário.
 - Web Push depende de navegador compatível, HTTPS e permissão do usuário; sem isso, as notificações internas continuam disponíveis.

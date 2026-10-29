@@ -11,7 +11,14 @@ import { ButtonLink } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CATEGORY_VALUES, EVENT_CATEGORIES } from "@/lib/constants";
 import { isValidISODate } from "@/lib/dates";
-import { getFilterOptions, searchEvents, type EventPeriod, type EventSort } from "@/lib/events";
+import {
+  getAttendingEventIds,
+  getFilterOptions,
+  searchEvents,
+  type EventPeriod,
+  type EventSort,
+} from "@/lib/events";
+import { getCurrentUser } from "@/lib/auth";
 import type { CategoryValue } from "@/lib/constants";
 
 export const metadata: Metadata = {
@@ -53,10 +60,17 @@ export default async function EventsPage({
   const pageRaw = Number(first(params.page) ?? "1");
   const page = Number.isFinite(pageRaw) && pageRaw > 0 ? Math.floor(pageRaw) : 1;
 
-  const [result, options] = await Promise.all([
+  const [result, options, user] = await Promise.all([
     searchEvents({ q, city, category, date, period, withRoute, sort, page }),
     getFilterOptions(),
+    getCurrentUser(),
   ]);
+  const attendingIds = user
+    ? await getAttendingEventIds(
+        user.id,
+        result.events.map((event) => event.id),
+      )
+    : new Set<string>();
 
   const activeFiltersCount = [
     q,
@@ -142,7 +156,13 @@ export default async function EventsPage({
           {result.events.length > 0 ? (
             <Reveal className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {result.events.map((event, index) => (
-                <EventCard key={event.id} event={event} priority={index < 3} />
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  priority={index < 3}
+                  attending={attendingIds.has(event.id)}
+                  authenticated={Boolean(user)}
+                />
               ))}
             </Reveal>
           ) : hasFilters ? (

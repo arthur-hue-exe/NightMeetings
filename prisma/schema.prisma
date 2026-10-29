@@ -12,28 +12,29 @@ datasource db {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  name         String
-  email        String    @unique
-  passwordHash String
-  role         String    @default("USER")
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  events       Event[]
-  sessions     Session[]
+  id               String            @id @default(cuid())
+  name             String
+  email            String            @unique
+  passwordHash     String
+  role             String            @default("USER")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  events           Event[]
+  eventAttendances EventAttendance[]
+  sessions         Session[]
 
-  communities           Community[]
-  globalMessages        GlobalMessage[]
-  conversationMembers   ConversationMember[]
-  privateMessages       PrivateMessage[]
-  createdConversations  Conversation[]        @relation("ConversationCreator")
-  pushSubscriptions     PushSubscription[]
-  notifications         Notification[]
-  cookieConsents        CookieConsent[]
-  reportsCreated        Report[]              @relation("ReportReporter")
-  reportsReviewed       Report[]              @relation("ReportReviewer")
-  moderationLogs        ModerationLog[]
-  forumBansCreated      ForumBan[]
+  communities          Community[]
+  globalMessages       GlobalMessage[]
+  conversationMembers  ConversationMember[]
+  privateMessages      PrivateMessage[]
+  createdConversations Conversation[]       @relation("ConversationCreator")
+  pushSubscriptions    PushSubscription[]
+  notifications        Notification[]
+  cookieConsents       CookieConsent[]
+  reportsCreated       Report[]             @relation("ReportReporter")
+  reportsReviewed      Report[]             @relation("ReportReviewer")
+  moderationLogs       ModerationLog[]
+  forumBansCreated     ForumBan[]
 
   @@index([createdAt])
   @@index([role])
@@ -52,36 +53,37 @@ model Session {
 }
 
 model Event {
-  id                String       @id @default(cuid())
-  title             String
-  slug              String       @unique
-  description       String?
-  category          String
-  city              String
+  id               String            @id @default(cuid())
+  title            String
+  slug             String            @unique
+  description      String?
+  category         String
+  city             String
   // Datas e horários são gravados como texto local (YYYY-MM-DD / HH:mm) no fuso
   // America/Sao_Paulo, evitando deslocamento de um dia em conversões UTC.
-  eventDate         String
-  startTime         String
-  endDate           String?
-  meetingPoint      String
-  departurePoint    String?
-  departureTime     String?
-  arrivalPoint      String?
-  arrivalDate       String?
-  arrivalTime       String?
-  coverImageUrl     String?
-  additionalInfo    String?
-  rules             String?
-  routeNotes        String?
-  contactInstagram  String?
-  status            String       @default("ACTIVE")
-  featured          Boolean      @default(false)
-  notifiedAt        DateTime?
-  userId            String
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
-  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  images            EventImage[]
+  eventDate        String
+  startTime        String
+  endDate          String?
+  meetingPoint     String
+  departurePoint   String?
+  departureTime    String?
+  arrivalPoint     String?
+  arrivalDate      String?
+  arrivalTime      String?
+  coverImageUrl    String?
+  additionalInfo   String?
+  rules            String?
+  routeNotes       String?
+  contactInstagram String?
+  status           String            @default("ACTIVE")
+  featured         Boolean           @default(false)
+  notifiedAt       DateTime?
+  userId           String
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  images           EventImage[]
+  attendances      EventAttendance[]
 
   @@index([status, eventDate])
   @@index([city, category, status])
@@ -101,24 +103,41 @@ model EventImage {
   @@index([eventId])
 }
 
+// Confirmação de presença: cancelar mantém o registro (cancelledAt) para que
+// reconfirmar não crie duplicatas nem infle a contagem.
+model EventAttendance {
+  id          String    @id @default(cuid())
+  eventId     String
+  userId      String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  cancelledAt DateTime?
+  event       Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([eventId, cancelledAt])
+  @@index([userId])
+}
+
 // ---------------------------------------------------------------------------
 // Comunidade: grupos, fórum global, mensagens privadas, notificações e consentimento
 // ---------------------------------------------------------------------------
 
 model Community {
-  id                String    @id @default(cuid())
+  id                String   @id @default(cuid())
   name              String
-  slug              String    @unique
+  slug              String   @unique
   description       String?
   emblemUrl         String
   whatsappInviteUrl String
   city              String?
   category          String
-  status            String    @default("ACTIVE")
+  status            String   @default("ACTIVE")
   creatorId         String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  creator           User      @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  creator           User     @relation(fields: [creatorId], references: [id], onDelete: Cascade)
 
   @@index([status, category])
   @@index([status, city])
@@ -127,30 +146,30 @@ model Community {
 }
 
 model AnonymousSession {
-  id             String              @id
-  nickname       String
-  createdAt      DateTime            @default(now())
-  lastSeenAt     DateTime            @default(now())
-  messages       GlobalMessage[]
+  id                String             @id
+  nickname          String
+  createdAt         DateTime           @default(now())
+  lastSeenAt        DateTime           @default(now())
+  messages          GlobalMessage[]
   pushSubscriptions PushSubscription[]
-  cookieConsents CookieConsent[]
-  reports        Report[]            @relation("AnonymousReporter")
-  forumBans      ForumBan[]
+  cookieConsents    CookieConsent[]
+  reports           Report[]           @relation("AnonymousReporter")
+  forumBans         ForumBan[]
 
   @@index([lastSeenAt])
 }
 
 model GlobalMessage {
-  id               String           @id @default(cuid())
+  id               String            @id @default(cuid())
   sessionId        String?
   userId           String?
   displayName      String
   content          String
-  moderationStatus String           @default("VISIBLE")
+  moderationStatus String            @default("VISIBLE")
   ipHash           String?
-  createdAt        DateTime         @default(now())
+  createdAt        DateTime          @default(now())
   session          AnonymousSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
-  user             User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user             User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
   @@index([moderationStatus, createdAt])
